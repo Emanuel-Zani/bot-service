@@ -8,7 +8,7 @@
   ],
   "routes": [
     {
-      "src": "/process-message",
+      "src": "/api/process-message",
       "dest": "/api/index.py"
     }
   ]
