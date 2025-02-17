@@ -5,17 +5,17 @@ from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from langchain.schema import SystemMessage, HumanMessage
 
-# Load environment variables
+# Cargar variables de entorno
 load_dotenv()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_API_KEY = os.getenv("SUPABASE_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-# Configure LangChain with GPT-3.5
+# Configurar LangChain con GPT-3.5
 llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.3, openai_api_key=OPENAI_API_KEY)
 
-# Extract expense details using GPT-3.5
+# Función para extraer detalles de un gasto
 def extract_expense_details(text):
     system_prompt = """You are an expert assistant for processing personal expenses. 
     Analyze the message and classify it into one of three categories:
@@ -29,20 +29,12 @@ def extract_expense_details(text):
 
     Valid categories: Housing, Transportation, Food, Utilities, 
     Insurance, Medical/Healthcare, Savings, Debt, Education, Entertainment, Other.
-
-    Example: "Lunch 15 dollars" → {"valid": true, "description": "Lunch", "amount": 15, "category": "Food"}
-    Example: "Bought a new phone" → {"valid": true, "description": "New phone", "amount": null, "category": "Other"}
-    Example: "Hello, how are you?" → {"valid": false, "type": "irrelevant"}
-    Example: "I spent money" → {"valid": false, "type": "ambiguous"}
     """
 
-    response = llm.invoke([
-        SystemMessage(content=system_prompt),
-        HumanMessage(content=f"Process this message: {text}")
-    ])
-
+    response = llm.invoke([SystemMessage(content=system_prompt), HumanMessage(content=f"Process this message: {text}")])
+    
     try:
-        expense_data = json.loads(response.content)  # Convertir respuesta a JSON
+        expense_data = json.loads(response.content)
         valid_categories = {
             "Housing", "Transportation", "Food", "Utilities", "Insurance",
             "Medical/Healthcare", "Savings", "Debt", "Education", "Entertainment", "Other"
@@ -50,7 +42,6 @@ def extract_expense_details(text):
 
         if isinstance(expense_data, dict) and "valid" in expense_data:
             if expense_data["valid"]:
-                # Asegurar que la categoría es válida
                 if expense_data["category"] not in valid_categories:
                     expense_data["category"] = "Other"
             return expense_data
@@ -59,7 +50,7 @@ def extract_expense_details(text):
 
     return {"valid": False}
 
-# Check if the user is in the whitelist
+# Función para verificar si el usuario está en la lista blanca
 def is_user_whitelisted(telegram_id):
     url = f"{SUPABASE_URL}/rest/v1/users?telegram_id=eq.{telegram_id}"
     headers = {"apikey": SUPABASE_API_KEY, "Authorization": f"Bearer {SUPABASE_API_KEY}"}
@@ -67,7 +58,7 @@ def is_user_whitelisted(telegram_id):
     
     return response.status_code == 200 and len(response.json()) > 0
 
-# Save expense to Supabase
+# Función para guardar el gasto en Supabase
 def save_to_database(expense):
     url = f"{SUPABASE_URL}/rest/v1/expenses"
     headers = {
@@ -81,28 +72,28 @@ def save_to_database(expense):
 
     return response.status_code == 201
 
-# Handler for Vercel serverless function
-def handler(req, res):
-    data = req.get_json()
+# Función exportada para Vercel
+def handler(request):
+    data = request.json
     user_id = data.get('userId')
     telegram_id = data.get('telegramId')
     text = data.get('text')
 
     if not user_id or not telegram_id or not text:
-        return res.json({"status": "error", "message": "Missing required fields"}), 400
+        return {"status": "error", "message": "Missing required fields"}, 400
 
     if not is_user_whitelisted(telegram_id):
-        return res.json({"status": "error", "message": "User not whitelisted"}), 403
+        return {"status": "error", "message": "User not whitelisted"}, 403
 
-    # Extract expense details using GPT-3.5
+    # Extraer detalles del gasto usando GPT-3.5
     expense_details = extract_expense_details(text)
     
     if not expense_details["valid"]:
         if expense_details.get("type") == "irrelevant":
-            return res.json({"status": "error", "message": "This message is not related to expenses."}), 400
+            return {"status": "error", "message": "This message is not related to expenses."}, 400
         elif expense_details.get("type") == "ambiguous":
-            return res.json({"status": "error", "message": "Please provide more details about your expense."}), 400
-        return res.json({"status": "error", "message": "This message does not seem to be a valid expense."}), 400
+            return {"status": "error", "message": "Please provide more details about your expense."}, 400
+        return {"status": "error", "message": "This message does not seem to be a valid expense."}, 400
 
     category = expense_details["category"]
 
@@ -113,14 +104,15 @@ def handler(req, res):
         "category": category
     }
 
-    # Save to the database
+    # Guardar en la base de datos
     if not save_to_database(expense):
-        return res.json({"status": "error", "message": "Failed to save expense"}), 500
+        return {"status": "error", "message": "Failed to save expense"}, 500
 
     response_message = f"{category} expense added ✅"
 
-    return res.json({
+    return {
         "status": "success",
         "message": response_message,
         "expense": expense
-    })
+    }
+
