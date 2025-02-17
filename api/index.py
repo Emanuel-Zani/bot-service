@@ -19,10 +19,10 @@ llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.3, openai_api_key=OPENAI_A
 def extract_expense_details(text):
     system_prompt = """You are an expert assistant for processing personal expenses. 
     Extract the description, amount, and category from an expense-related message. 
-    If no valid expense is found, return {"valid": false}.
+    If no valid expense is found, return {"valid": false}. 
 
-    Example: "Lunch 15 dollars" → {"valid": true, "description": "Lunch", "amount": 15, "category": "Food"}
-    Example: "Bought a new phone" → {"valid": false}
+    Example: "Lunch 15 dollars" → {"valid": true, "description": "Lunch", "amount": 15, "category": "Food"} 
+    Example: "Bought a new phone" → {"valid": false} 
     """
 
     # Request GPT-3.5 to process the message
@@ -31,7 +31,6 @@ def extract_expense_details(text):
         HumanMessage(content=f"Process this message: {text}")
     ])
 
-    # Attempt to parse the JSON response from LangChain
     try:
         expense_data = json.loads(response['content'])
         if isinstance(expense_data, dict) and "valid" in expense_data:
@@ -61,39 +60,26 @@ def save_to_database(expense):
     expense["added_at"] = "now()"
     response = requests.post(url, json=expense, headers=headers)
 
-    if response.status_code == 201:
-        return True
-    else:
-        print("Error saving to database:", response.text)
-        return False
+    return response.status_code == 201
 
-# Main handler for Vercel
-def handler(request):
-    data = request.json
+# Handler for Vercel serverless function
+def handler(req, res):
+    data = req.get_json()
     user_id = data.get('userId')
     telegram_id = data.get('telegramId')
     text = data.get('text')
 
     if not user_id or not telegram_id or not text:
-        return {
-            "statusCode": 400,
-            "body": json.dumps({"status": "error", "message": "Missing required fields"})
-        }
+        return res.json({"status": "error", "message": "Missing required fields"}), 400
 
     if not is_user_whitelisted(telegram_id):
-        return {
-            "statusCode": 403,
-            "body": json.dumps({"status": "error", "message": "User not whitelisted"})
-        }
+        return res.json({"status": "error", "message": "User not whitelisted"}), 403
 
     # Extract expense details using GPT-3.5
     expense_details = extract_expense_details(text)
     
     if not expense_details["valid"]:
-        return {
-            "statusCode": 400,
-            "body": json.dumps({"status": "error", "message": "This message does not seem to be a valid expense."})
-        }
+        return res.json({"status": "error", "message": "This message does not seem to be a valid expense."}), 400
 
     category = expense_details["category"]
 
@@ -106,18 +92,13 @@ def handler(request):
 
     # Save to the database
     if not save_to_database(expense):
-        return {
-            "statusCode": 500,
-            "body": json.dumps({"status": "error", "message": "Failed to save expense"})
-        }
+        return res.json({"status": "error", "message": "Failed to save expense"}), 500
 
     response_message = f"{category} expense added ✅"
 
-    return {
-        "statusCode": 200,
-        "body": json.dumps({
-            "status": "success",
-            "message": response_message,
-            "expense": expense
-        })
-    }
+    return res.json({
+        "status": "success",
+        "message": response_message,
+        "expense": expense
+    })
+

@@ -1,5 +1,4 @@
 requests
-python-dotenv
-langchain
-openai
+dotenv
+langchain-openai
 flask
