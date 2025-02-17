@@ -18,22 +18,41 @@ llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.3, openai_api_key=OPENAI_A
 # Extract expense details using GPT-3.5
 def extract_expense_details(text):
     system_prompt = """You are an expert assistant for processing personal expenses. 
-    Extract the description, amount, and category from an expense-related message. 
-    If no valid expense is found, return {"valid": false}. 
+    Analyze the message and classify it into one of three categories:
+    1. Expense-related: Extract the description, amount, and category.
+    2. Ambiguous: The message suggests an expense but lacks key details.
+    3. Irrelevant: The message is not related to expenses.
 
-    Example: "Lunch 15 dollars" → {"valid": true, "description": "Lunch", "amount": 15, "category": "Food"} 
-    Example: "Bought a new phone" → {"valid": false} 
+    If the message is irrelevant, return {"valid": false, "type": "irrelevant"}.
+    If the message is ambiguous, return {"valid": false, "type": "ambiguous"}.
+    If the message is valid, return the extracted details.
+
+    Valid categories: Housing, Transportation, Food, Utilities, 
+    Insurance, Medical/Healthcare, Savings, Debt, Education, Entertainment, Other.
+
+    Example: "Lunch 15 dollars" → {"valid": true, "description": "Lunch", "amount": 15, "category": "Food"}
+    Example: "Bought a new phone" → {"valid": true, "description": "New phone", "amount": null, "category": "Other"}
+    Example: "Hello, how are you?" → {"valid": false, "type": "irrelevant"}
+    Example: "I spent money" → {"valid": false, "type": "ambiguous"}
     """
 
-    # Request GPT-3.5 to process the message
-    response = llm.invoke([ 
+    response = llm.invoke([
         SystemMessage(content=system_prompt),
         HumanMessage(content=f"Process this message: {text}")
     ])
 
     try:
-        expense_data = json.loads(response['content'])
+        expense_data = json.loads(response.content)  # Convertir respuesta a JSON
+        valid_categories = {
+            "Housing", "Transportation", "Food", "Utilities", "Insurance",
+            "Medical/Healthcare", "Savings", "Debt", "Education", "Entertainment", "Other"
+        }
+
         if isinstance(expense_data, dict) and "valid" in expense_data:
+            if expense_data["valid"]:
+                # Asegurar que la categoría es válida
+                if expense_data["category"] not in valid_categories:
+                    expense_data["category"] = "Other"
             return expense_data
     except json.JSONDecodeError:
         pass
@@ -79,6 +98,10 @@ def handler(req, res):
     expense_details = extract_expense_details(text)
     
     if not expense_details["valid"]:
+        if expense_details.get("type") == "irrelevant":
+            return res.json({"status": "error", "message": "This message is not related to expenses."}), 400
+        elif expense_details.get("type") == "ambiguous":
+            return res.json({"status": "error", "message": "Please provide more details about your expense."}), 400
         return res.json({"status": "error", "message": "This message does not seem to be a valid expense."}), 400
 
     category = expense_details["category"]
@@ -101,4 +124,3 @@ def handler(req, res):
         "message": response_message,
         "expense": expense
     })
-
