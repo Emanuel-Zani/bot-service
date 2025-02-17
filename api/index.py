@@ -4,18 +4,21 @@ import json
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from langchain.schema import SystemMessage, HumanMessage
+from flask import Flask, request, jsonify
 
-# Cargar variables de entorno
+# Load environment variables
 load_dotenv()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_API_KEY = os.getenv("SUPABASE_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-# Configurar LangChain con GPT-3.5
+# Configure LangChain with GPT-3.5
 llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.3, openai_api_key=OPENAI_API_KEY)
 
-# Función para extraer detalles de un gasto
+app = Flask(__name__)
+
+# Extract expense details using GPT-3.5
 def extract_expense_details(text):
     system_prompt = """You are an expert assistant for processing personal expenses. 
     Analyze the message and classify it into one of three categories:
@@ -29,6 +32,11 @@ def extract_expense_details(text):
 
     Valid categories: Housing, Transportation, Food, Utilities, 
     Insurance, Medical/Healthcare, Savings, Debt, Education, Entertainment, Other.
+
+    Example: "Lunch 15 dollars" → {"valid": true, "description": "Lunch", "amount": 15, "category": "Food"}
+    Example: "Bought a new phone" → {"valid": true, "description": "New phone", "amount": null, "category": "Other"}
+    Example: "Hello, how are you?" → {"valid": false, "type": "irrelevant"}
+    Example: "I spent money" → {"valid": false, "type": "ambiguous"}
     """
 
     response = llm.invoke([SystemMessage(content=system_prompt), HumanMessage(content=f"Process this message: {text}")])
@@ -50,7 +58,7 @@ def extract_expense_details(text):
 
     return {"valid": False}
 
-# Función para verificar si el usuario está en la lista blanca
+# Check if the user is in the whitelist
 def is_user_whitelisted(telegram_id):
     url = f"{SUPABASE_URL}/rest/v1/users?telegram_id=eq.{telegram_id}"
     headers = {"apikey": SUPABASE_API_KEY, "Authorization": f"Bearer {SUPABASE_API_KEY}"}
@@ -58,7 +66,7 @@ def is_user_whitelisted(telegram_id):
     
     return response.status_code == 200 and len(response.json()) > 0
 
-# Función para guardar el gasto en Supabase
+# Save expense to Supabase
 def save_to_database(expense):
     url = f"{SUPABASE_URL}/rest/v1/expenses"
     headers = {
@@ -72,28 +80,28 @@ def save_to_database(expense):
 
     return response.status_code == 201
 
-# Función exportada para Vercel
-def handler(request):
+@app.route('/process-message', methods=['POST'])
+def process_message():
     data = request.json
     user_id = data.get('userId')
     telegram_id = data.get('telegramId')
     text = data.get('text')
 
     if not user_id or not telegram_id or not text:
-        return {"status": "error", "message": "Missing required fields"}, 400
+        return jsonify({"status": "error", "message": "Missing required fields"}), 400
 
     if not is_user_whitelisted(telegram_id):
-        return {"status": "error", "message": "User not whitelisted"}, 403
+        return jsonify({"status": "error", "message": "User not whitelisted"}), 403
 
-    # Extraer detalles del gasto usando GPT-3.5
+    # Extract expense details using GPT-3.5
     expense_details = extract_expense_details(text)
     
     if not expense_details["valid"]:
         if expense_details.get("type") == "irrelevant":
-            return {"status": "error", "message": "This message is not related to expenses."}, 400
+            return jsonify({"status": "error", "message": "This message is not related to expenses."}), 400
         elif expense_details.get("type") == "ambiguous":
-            return {"status": "error", "message": "Please provide more details about your expense."}, 400
-        return {"status": "error", "message": "This message does not seem to be a valid expense."}, 400
+            return jsonify({"status": "error", "message": "Please provide more details about your expense."}), 400
+        return jsonify({"status": "error", "message": "This message does not seem to be a valid expense."}), 400
 
     category = expense_details["category"]
 
@@ -104,15 +112,17 @@ def handler(request):
         "category": category
     }
 
-    # Guardar en la base de datos
+    # Save to the database
     if not save_to_database(expense):
-        return {"status": "error", "message": "Failed to save expense"}, 500
+        return jsonify({"status": "error", "message": "Failed to save expense"}), 500
 
     response_message = f"{category} expense added ✅"
 
-    return {
+    return jsonify({
         "status": "success",
         "message": response_message,
         "expense": expense
-    }
+    })
 
+if __name__ == "__main__":
+    app.run(debug=True, host="0.0.0.0", port=5000)
