@@ -6,19 +6,19 @@ from langchain_openai import ChatOpenAI
 from langchain.schema import SystemMessage, HumanMessage
 from flask import Flask, request, jsonify
 
-# Cargar variables de entorno
+# Load environment variables
 load_dotenv()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_API_KEY = os.getenv("SUPABASE_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-# Configurar LangChain con GPT-3.5
+# Configure LangChain with GPT-3.5
 llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.3, openai_api_key=OPENAI_API_KEY)
 
 app = Flask(__name__)
 
-# Función para extraer detalles del gasto con GPT
+# Feature to extract expense details with GPT
 def extract_expense_details(text):
     system_prompt = """You are an expert assistant for processing personal expenses... (MISMA DESCRIPCIÓN)"""
 
@@ -38,7 +38,7 @@ def extract_expense_details(text):
 
     return {"valid": False}
 
-# Guardar el gasto en la base de datos
+# Save the expense in the database
 def save_to_database(expense):
     url = f"{SUPABASE_URL}/rest/v1/expenses"
     headers = {
@@ -55,13 +55,13 @@ def save_to_database(expense):
 @app.route('/process-message', methods=['POST'])
 def process_message():
     data = request.json
-    user_id = data.get('userId')  # Se elimina telegramId
+    user_id = data.get('userId') 
     text = data.get('text')
 
     if not user_id or not text:
         return jsonify({"status": "error", "message": "Missing required fields"}), 400
 
-    # Extraer detalles del gasto con GPT
+    # Extract expense details with GPT
     expense_details = extract_expense_details(text)
 
     if not expense_details["valid"]:
@@ -79,8 +79,8 @@ def process_message():
         "amount": expense_details["amount"],
         "category": category
     }
-
-    # Guardar en la base de datos
+    
+    # Save to database
     if not save_to_database(expense):
         return jsonify({"status": "error", "message": "Failed to save expense"}), 500
 
