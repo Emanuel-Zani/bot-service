@@ -20,7 +20,24 @@ app = Flask(__name__)
 
 # Feature to extract expense details with GPT
 def extract_expense_details(text):
-    system_prompt = """You are an expert assistant for processing personal expenses... (MISMA DESCRIPCIÓN)"""
+    system_prompt = """ You are an expert assistant for processing personal expenses.   
+Analyze the message and classify it into one of three categories:  
+
+1. Expense-related: Extract the description, amount, and category.  
+2. Ambiguous: The message suggests an expense but lacks key details.  
+3. Irrelevant: The message is not related to expenses.    
+
+If the message is irrelevant, return `{"valid": false, "type": "irrelevant"}`.  
+If the message is ambiguous, return `{"valid": false, "type": "ambiguous"}`.  
+If the message is valid, return the extracted details.    
+
+Valid categories: **Housing, Transportation, Food, Utilities, Insurance, Medical/Healthcare, Savings, Debt, Education, Entertainment, Other.**  
+
+**Ejemplos:**  
+- `"Lunch 15 dollars"` → `{"valid": true, "description": "Lunch", "amount": 15, "category": "Food"}`  
+- `"Bought a new phone"` → `{"valid": true, "description": "New phone", "amount": null, "category": "Other"}`  
+- `"Hello, how are you?"` → `{"valid": false, "type": "irrelevant"}`  
+- `"I spent money"` → `{"valid": false, "type": "ambiguous"}` """
 
     response = llm.invoke([SystemMessage(content=system_prompt), HumanMessage(content=f"Process this message: {text}")])
 
